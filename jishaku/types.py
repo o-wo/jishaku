@@ -14,7 +14,9 @@ Declarations for type checking
 import typing
 
 from discord.ext import commands
+from redbot.core.bot import Red
 
 BotT = typing.Union[commands.Bot, commands.AutoShardedBot]
 ContextT = typing.TypeVar('ContextT', commands.Context[commands.Bot], commands.Context[commands.AutoShardedBot])
 ContextA = commands.Context[BotT]
+ContextM = commands.Context[Red]

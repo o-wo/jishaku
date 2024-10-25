@@ -22,8 +22,8 @@ import discord
 from jishaku.exception_handling import ReplResponseReactor
 from jishaku.features.baseclass import Feature
 from jishaku.hljs import get_language, guess_file_traits
-from jishaku.paginators import PaginatorInterface, WrappedFilePaginator, use_file_check
-from jishaku.types import ContextA
+from jishaku.paginators import MAX_MESSAGE_SIZE, Interface, WrappedFilePaginator, use_file_check
+from jishaku.types import ContextA, ContextM
 
 
 class FilesystemFeature(Feature):
@@ -84,8 +84,8 @@ class FilesystemFeature(Feature):
                             fp=file
                         ))
                 else:
-                    paginator = WrappedFilePaginator(file, line_span=line_span, max_size=1980)
-                    interface = PaginatorInterface(ctx.bot, paginator, owner=ctx.author)
+                    paginator = WrappedFilePaginator(file, line_span=line_span, max_size=MAX_MESSAGE_SIZE)
+                    interface = Interface(ctx.bot, paginator, owner=ctx.author)
                     await interface.send_to(ctx)
         except UnicodeDecodeError:
             return await ctx.send(f"`{path}`: Couldn't determine the encoding of this file.")
@@ -93,7 +93,7 @@ class FilesystemFeature(Feature):
             return await ctx.send(f"`{path}`: Couldn't read this file, {exc}")
 
     @Feature.Command(parent="jsk", name="curl")
-    async def jsk_curl(self, ctx: ContextA, url: str):
+    async def jsk_curl(self, ctx: ContextM, url: str):
         """
         Download and display a text file from the internet.
 
@@ -104,14 +104,13 @@ class FilesystemFeature(Feature):
         url = url.lstrip("<").rstrip(">")
 
         async with ReplResponseReactor(ctx.message):
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    data = await response.read()
-                    hints = (
-                        response.content_type,
-                        url
-                    )
-                    code = response.status
+            async with ctx.bot.session.get(url) as response:
+                data = await response.read()
+                hints = (
+                    response.content_type,
+                    url
+                )
+                code = response.status
 
             if not data:
                 return await ctx.send(f"HTTP response was empty (status code {code}).")
@@ -132,11 +131,11 @@ class FilesystemFeature(Feature):
                 ))
             else:
                 try:
-                    paginator = WrappedFilePaginator(io.BytesIO(data), language_hints=hints, max_size=1980)
+                    paginator = WrappedFilePaginator(io.BytesIO(data), language_hints=hints, max_size=MAX_MESSAGE_SIZE)
                 except UnicodeDecodeError:
                     return await ctx.send(f"Couldn't determine the encoding of the response. (status code {code})")
                 except ValueError as exc:
                     return await ctx.send(f"Couldn't read response (status code {code}), {exc}")
 
-                interface = PaginatorInterface(ctx.bot, paginator, owner=ctx.author)
+                interface = Interface(ctx.bot, paginator, owner=ctx.author)
                 await interface.send_to(ctx)

@@ -20,12 +20,12 @@ import time
 import typing
 
 import discord
-from discord.ext import commands
+from redbot.core import commands
 
 from jishaku.exception_handling import ReplResponseReactor
 from jishaku.features.baseclass import Feature
 from jishaku.models import copy_context_with
-from jishaku.paginators import PaginatorInterface, WrappedPaginator, use_file_check
+from jishaku.paginators import MAX_MESSAGE_SIZE, Interface, WrappedPaginator, use_file_check
 from jishaku.types import ContextA, ContextT
 
 UserIDConverter = commands.IDConverter[typing.Union[discord.Member, discord.User]]
@@ -41,7 +41,7 @@ class SlimUserConverter(UserIDConverter):  # pylint: disable=too-few-public-meth
 
     async def convert(self, ctx: ContextA, argument: str) -> typing.Union[discord.Member, discord.User]:
         """Converter method"""
-        match = self._get_id_match(argument) or re.match(r"<@!?([0-9]{15,20})>$", argument)  # type: ignore
+        match = self._get_id_match(argument) or re.match(r"<@!?([0-9]{15,20})>$", argument)
 
         if match is not None:
             user_id = int(match.group(1))
@@ -196,16 +196,16 @@ class InvocationFeature(Feature):
             return await ctx.send(f"Couldn't find command `{command_name}`.")
 
         try:
-            source_lines, _ = inspect.getsourcelines(command.callback)  # type: ignore
+            source_lines, _ = inspect.getsourcelines(command.callback)
         except (TypeError, OSError):
-            return await ctx.send(f"Was unable to retrieve the source for `{command}` for some reason.")
+            return await ctx.send(f"Failed to retrieve the source for `{command}` for some reason.")
 
-        filename = "source.py"
+        #  filename = "source.py"
 
         try:
-            filename = pathlib.Path(inspect.getfile(command.callback)).name  # type: ignore
+            filename = pathlib.Path(inspect.getfile(command.callback)).name
         except (TypeError, OSError):
-            pass
+            filename = "source.py"
 
         # getsourcelines for some reason returns WITH line endings
         source_text = "".join(source_lines)
@@ -213,9 +213,9 @@ class InvocationFeature(Feature):
         if use_file_check(ctx, len(source_text)):  # File "full content" preview limit
             await ctx.send(file=discord.File(filename=filename, fp=io.BytesIO(source_text.encode("utf-8"))))
         else:
-            paginator = WrappedPaginator(prefix="```py", suffix="```", max_size=1980)
+            paginator = WrappedPaginator(prefix="```py", suffix="```", max_size=MAX_MESSAGE_SIZE)
 
             paginator.add_line(source_text.replace("```", "``\N{zero width space}`"))
 
-            interface = PaginatorInterface(ctx.bot, paginator, owner=ctx.author)
+            interface = Interface(ctx.bot, paginator, owner=ctx.author)
             await interface.send_to(ctx)

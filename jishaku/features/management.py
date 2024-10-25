@@ -19,14 +19,14 @@ import typing
 from urllib.parse import urlencode
 
 import discord
-from discord.ext import commands
+from redbot.core import commands
 
 from jishaku.features.baseclass import Feature
 from jishaku.flags import Flags
 from jishaku.math import mean_stddev
 from jishaku.modules import ExtensionConverter
 from jishaku.repl import inspections
-from jishaku.types import ContextA
+from jishaku.types import ContextA, ContextM
 
 
 class ManagementFeature(Feature):
@@ -67,7 +67,7 @@ class ManagementFeature(Feature):
                     traceback_data = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__, 2))
 
                 paginator.add_line(
-                    f"{icon}\N{WARNING SIGN} `{extension}`\n```py\n{traceback_data}\n```",
+                    f"{icon}⚠️ `{extension}`\n```py\n{traceback_data}\n```",
                     empty=True
                 )
             else:
@@ -96,7 +96,7 @@ class ManagementFeature(Feature):
                 traceback_data = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__, 2))
 
                 paginator.add_line(
-                    f"{icon}\N{WARNING SIGN} `{extension}`\n```py\n{traceback_data}\n```",
+                    f"{icon}⚠️ `{extension}`\n```py\n{traceback_data}\n```",
                     empty=True
                 )
             else:
@@ -142,7 +142,7 @@ class ManagementFeature(Feature):
         }
 
         return await ctx.send(
-            f"Link to invite this bot:\n<https://discordapp.com/oauth2/authorize?{urlencode(query, safe='+')}>"
+            f"Link to invite this bot:\n<https://discord.com/oauth2/authorize?{urlencode(query, safe='+')}>"
         )
 
     @Feature.Command(parent="jsk", name="rtt", aliases=["ping"])
@@ -200,7 +200,7 @@ class ManagementFeature(Feature):
     SLASH_COMMAND_ERROR = re.compile(r"In ((?:\d+\.[a-z]+\.?)+)")
 
     @Feature.Command(parent="jsk", name="sync")
-    async def jsk_sync(self, ctx: ContextA, *targets: str):
+    async def jsk_sync(self, ctx: ContextM, *targets: str):
         """
         Sync global or guild application commands to Discord.
         """
@@ -216,7 +216,7 @@ class ManagementFeature(Feature):
             if target == '$':
                 guilds_set.add(None)
             elif target == '*':
-                guilds_set |= set(self.bot.tree._guild_commands.keys())  # type: ignore  # pylint: disable=protected-access
+                guilds_set |= set(self.bot.tree._guild_commands.keys())  # pylint: disable=protected-access
             elif target == '.':
                 if ctx.guild:
                     guilds_set.add(ctx.guild.id)
@@ -236,22 +236,14 @@ class ManagementFeature(Feature):
         guilds.sort(key=lambda g: (g is not None, g))
 
         for guild in guilds:
-            slash_commands = self.bot.tree._get_all_commands(  # type: ignore  # pylint: disable=protected-access
+            slash_commands = self.bot.tree._get_all_commands(  # pylint: disable=protected-access
                 guild=discord.Object(guild) if guild else None
             )
             translator = getattr(self.bot.tree, 'translator', None)
-            needs_dpy_2_4_signature_changes = discord.version_info.major >= 2 and discord.version_info.minor >= 4
-
-            if needs_dpy_2_4_signature_changes:
-                if translator:
-                    payload = [await command.get_translated_payload(self.bot.tree, translator) for command in slash_commands]
-                else:
-                    payload = [command.to_dict(self.bot.tree) for command in slash_commands]
+            if translator:
+                payload = [await command.get_translated_payload(self.bot.tree, translator) for command in slash_commands]
             else:
-                if translator:
-                    payload = [await command.get_translated_payload(translator) for command in slash_commands]
-                else:
-                    payload = [command.to_dict() for command in slash_commands]
+                payload = [command.to_dict(self.bot.tree) for command in slash_commands]
 
             try:
                 if guild is None:
@@ -260,7 +252,7 @@ class ManagementFeature(Feature):
                     data = await self.bot.http.bulk_upsert_guild_commands(self.bot.application_id, guild, payload=payload)
 
                 synced = [
-                    discord.app_commands.AppCommand(data=d, state=ctx._state)  # type: ignore  # pylint: disable=protected-access,no-member
+                    discord.app_commands.AppCommand(data=d, state=ctx._state)  # pylint: disable=protected-access,no-member
                     for d in data
                 ]
 
@@ -287,10 +279,10 @@ class ManagementFeature(Feature):
 
                             if pool:
                                 # If the pool exists, this should be a subcommand
-                                selected_command = pool[index]  # type: ignore
+                                selected_command = pool[index]
                                 name += selected_command.name + " "
 
-                                if hasattr(selected_command, '_children'):  # type: ignore
+                                if hasattr(selected_command, '_children'):
                                     pool = list(selected_command._children.values())  # type: ignore  # pylint: disable=protected-access
                                 else:
                                     pool = None
@@ -302,7 +294,7 @@ class ManagementFeature(Feature):
                         if selected_command:
                             to_inspect: typing.Any = None
 
-                            if hasattr(selected_command, 'callback'):  # type: ignore
+                            if hasattr(selected_command, 'callback'):
                                 to_inspect = selected_command.callback  # type: ignore
                             elif isinstance(selected_command, commands.Cog):
                                 to_inspect = type(selected_command)
@@ -312,9 +304,9 @@ class ManagementFeature(Feature):
                                     "\N{MAGNET} This is likely caused by: `",
                                     name,
                                     "` at ",
-                                    str(inspections.file_loc_inspection(to_inspect)),  # type: ignore
+                                    str(inspections.file_loc_inspection(to_inspect)),
                                     ":",
-                                    str(inspections.line_span_inspection(to_inspect)),  # type: ignore
+                                    str(inspections.line_span_inspection(to_inspect)),
                                 ]))
                             except Exception:  # pylint: disable=broad-except
                                 error_lines.append(f"\N{MAGNET} This is likely caused by: `{name}`")
@@ -325,14 +317,16 @@ class ManagementFeature(Feature):
                 error_text = '\n'.join(error_lines)
 
                 if guild:
-                    paginator.add_line(f"\N{WARNING SIGN} `{guild}`: {error_text}", empty=True)
+                    paginator.add_line(f"⚠️ `{guild}`: {error_text}", empty=True)
                 else:
-                    paginator.add_line(f"\N{WARNING SIGN} Global: {error_text}", empty=True)
+                    paginator.add_line(f"⚠️ Global: {error_text}", empty=True)
             else:
                 if guild:
                     paginator.add_line(f"\N{SATELLITE ANTENNA} `{guild}` Synced {len(synced)} guild commands", empty=True)
                 else:
                     paginator.add_line(f"\N{SATELLITE ANTENNA} Synced {len(synced)} global commands", empty=True)
+
+                ctx.bot.tree._update_command_ids(synced)
 
         for page in paginator.pages:
             await ctx.send(page)

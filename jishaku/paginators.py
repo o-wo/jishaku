@@ -18,7 +18,7 @@ import typing
 
 import discord
 from discord import ui
-from discord.ext import commands
+from redbot.core import commands
 
 from jishaku.flags import Flags
 from jishaku.hljs import get_language, guess_file_traits
@@ -27,7 +27,8 @@ from jishaku.types import BotT, ContextA
 if typing.TYPE_CHECKING:
     from discord.types.components import ButtonComponent
 
-__all__ = ('EmojiSettings', 'PaginatorInterface', 'PaginatorEmbedInterface',
+__all__ = ('MAX_MESSAGE_SIZE', 'EmojiSettings', 'Interface',
+           'PaginatorInterface', 'PaginatorEmbedInterface',
            'WrappedPaginator', 'FilePaginator', 'use_file_check')
 
 
@@ -178,7 +179,7 @@ def use_file_check(
     size: int
 ) -> bool:
     """
-    A check to determine if uploading a file and relying on Discord's file preview is acceptable over a PaginatorInterface.
+    A check to determine if uploading a file and relying on Discord's file preview is acceptable over an Interface.
     """
 
     return all([
@@ -213,7 +214,7 @@ EMOJI_DEFAULT = EmojiSettings(
     back="\N{BLACK LEFT-POINTING TRIANGLE}",
     forward="\N{BLACK RIGHT-POINTING TRIANGLE}",
     end="\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}",
-    close="\N{BLACK SQUARE FOR STOP}",
+    close="\N{HEAVY MULTIPLICATION X}\N{VARIATION SELECTOR-16}",
 )
 
 
@@ -231,7 +232,7 @@ class DynamicButton(ui.Button[V_co]):
         label_callback: typing.Callable[[typing.Self], str],
         **kwargs,  # type: ignore
     ):
-        super().__init__(**kwargs)  # type: ignore
+        super().__init__(**kwargs)
 
         self.callback = callback  # type: ignore
         self.label_callback = label_callback
@@ -250,7 +251,7 @@ class DynamicButton(ui.Button[V_co]):
         return self._underlying.to_dict()
 
 
-class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attributes
     """
     A message and reaction based interface for paginators.
 
@@ -294,19 +295,21 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
         additional_buttons: typing.Optional[typing.List[ui.Button[typing.Self]]] = None,
         **kwargs: typing.Any
     ):
-        if not isinstance(paginator, commands.Paginator):  # type: ignore
+        if not isinstance(paginator, commands.Paginator):
             raise TypeError('paginator must be a commands.Paginator instance')
+
+        kwargs.pop('embed', None)
 
         self._display_page = 0
 
         self.bot = bot
 
-        self.message = None
+        self.message: discord.Message = None
         self.paginator = paginator
 
-        self.owner = kwargs.pop('owner', None)
+        self.owner: discord.abc.User = kwargs.pop('owner', None)
         self.emojis = kwargs.pop('emoji', EMOJI_DEFAULT)
-        self.timeout_length = kwargs.pop('timeout', 7200)
+        self.timeout_length = kwargs.pop('timeout', 720)
         self.delete_message = kwargs.pop('delete_message', False)
 
         self.sent_page_reactions = False
@@ -324,9 +327,6 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
 
         super().__init__(timeout=self.timeout_length)
 
-        self.button_start: DynamicButton[typing.Self] = DynamicButton(
-            self.button_start_callback, self.button_start_label, style=discord.ButtonStyle.secondary
-        )
         self.button_previous: DynamicButton[typing.Self] = DynamicButton(
             self.button_previous_callback, self.button_previous_label, style=discord.ButtonStyle.secondary
         )
@@ -335,12 +335,6 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
         )
         self.button_next: DynamicButton[typing.Self] = DynamicButton(
             self.button_next_callback, self.button_next_label, style=discord.ButtonStyle.secondary
-        )
-        self.button_last: DynamicButton[typing.Self] = DynamicButton(
-            self.button_last_callback, self.button_last_label, style=discord.ButtonStyle.secondary
-        )
-        self.button_goto: DynamicButton[typing.Self] = DynamicButton(
-            self.button_goto_callback, self.button_goto_label, style=discord.ButtonStyle.primary
         )
         self.button_close: DynamicButton[typing.Self] = DynamicButton(
             self.button_close_callback, self.button_close_label, style=discord.ButtonStyle.danger
@@ -356,19 +350,15 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
     def button_definitions(self) -> typing.List[ui.Button[typing.Self]]:
         """
         This is an overridable function you can use to remove buttons or customize their order.
-
         If you only need to add buttons, consider passing `additional_buttons` to the constructor.
         """
 
         return [
-            self.button_start,
             self.button_previous,
             self.button_current,
             self.button_next,
-            self.button_last,
-            *self.additional_buttons,
-            self.button_goto,
             self.button_close,
+            *self.additional_buttons,
         ]
 
     @property
@@ -379,12 +369,11 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
         # protected access has to be permitted here to not close the paginator's pages
 
         # pylint: disable=protected-access
-        paginator_pages = list(self.paginator._pages)  # type: ignore
-        if len(self.paginator._current_page) > 1:  # type: ignore
+        paginator_pages = list(self.paginator._pages)
+        if len(self.paginator._current_page) > 1:
             paginator_pages.append(
-                '\n'.join(self.paginator._current_page)  # type: ignore
-                + '\n'
-                + (self.paginator.suffix or '')
+                '\n'.join(self.paginator._current_page)
+                + f'\n{self.paginator.suffix or ""}'
             )
         # pylint: enable=protected-access
 
@@ -425,7 +414,7 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
         If this exceeds `max_page_size`, an exception is raised upon instantiation.
         """
         page_count = self.page_count
-        return self.paginator.max_size + len(f'\nPage {page_count}/{page_count}')
+        return self.paginator.max_size + len(f'\n{page_count} / {page_count}')
 
     @property
     def send_kwargs(self) -> typing.Dict[str, typing.Any]:
@@ -445,16 +434,16 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
         if it is already on it.
         """
 
-        display_page = self.display_page
-        page_count = self.page_count
+        #  display_page = self.display_page
+        #  page_count = self.page_count
 
         self.paginator.add_line(*args, **kwargs)
 
-        new_page_count = self.page_count
+        #  new_page_count = self.page_count
 
-        if display_page + 1 == page_count:
+        #  if display_page + 1 == page_count:
             # To keep position fixed on the end, update position to new last page and update message.
-            self._display_page = new_page_count
+            #  self._display_page = new_page_count
 
         # Unconditionally set send lock to try and guarantee page updates on unfocused pages
         self.send_lock.set()
@@ -465,7 +454,7 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
 
         This automatically creates the response task for you.
         """
-
+        self.update_view()
         self.message = await destination.send(
             **self.send_kwargs, allowed_mentions=discord.AllowedMentions.none()
         )
@@ -475,7 +464,7 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
         if self.task:
             self.task.cancel()
 
-        self.task = self.bot.loop.create_task(self.wait_loop())
+        self.task = asyncio.create_task(self.wait_loop())
 
         return self
 
@@ -497,7 +486,7 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
 
         gathered = await self.send_lock.wait()
         self.send_lock.clear()
-        await asyncio.sleep(1)
+        await asyncio.sleep(1.0)
         return gathered
 
     async def wait_loop(self):
@@ -517,7 +506,7 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
 
                 try:
                     await self.message.edit(**self.send_kwargs)
-                except discord.NotFound:
+                except (discord.NotFound, discord.HTTPException):
                     # something terrible has happened
                     return
 
@@ -532,115 +521,94 @@ class PaginatorInterface(ui.View):  # pylint: disable=too-many-instance-attribut
             if not self.message:
                 return
 
-            if self.delete_message:
-                await self.message.delete()
-            else:
-                await self.message.edit(view=None)
+            try:
+                if self.delete_message:
+                    await self.message.delete()
+                else:
+                    await self.message.edit(view=None)
+            except discord.HTTPException:
+                return
 
-    async def interaction_check(self, *args: typing.Any):  # pylint: disable=arguments-differ
+    async def interaction_check(self, interaction: discord.Interaction):
         """Check that determines whether this interaction should be honored"""
-        *_, interaction = args  # type: ignore  #149
-        interaction: discord.Interaction
-        return not self.owner or interaction.user.id == self.owner.id
+        check = not self.owner or interaction.user.id == self.owner.id
+        if not check:
+            await interaction.response.send_message("nuh uh", ephemeral=True)
+            return False
+        return check
 
-    async def button_start_callback(self, interaction: discord.Interaction):  # pylint: disable=unused-argument
-        """Button to send interface to first page"""
-
-        self._display_page = 0
-        await interaction.response.edit_message(**self.send_kwargs)
-
-    def button_start_label(self, _button: ui.Button[typing.Self]) -> str:
-        """Label for returning to the first page (constant)"""
-        return f"1 \u200b {self.emojis.start}"
-
+    #  @ui.button(emoji="<:icons_leftarrow:860123643816312852>", style=discord.ButtonStyle.secondary)
     async def button_previous_callback(self, interaction: discord.Interaction):  # pylint: disable=unused-argument
         """Button to send interface to previous page"""
 
         self._display_page -= 1
+        self.update_view()
         await interaction.response.edit_message(**self.send_kwargs)
 
     def button_previous_label(self, _button: ui.Button[typing.Self]) -> str:
         """Left arrow label for going to the previous page (constant)"""
         return str(self.emojis.back)
 
+    #  @ui.button(label="1", style=discord.ButtonStyle.primary)
     async def button_current_callback(self, interaction: discord.Interaction):  # pylint: disable=unused-argument
         """Button to refresh the interface"""
 
-        await interaction.response.edit_message(**self.send_kwargs)
+        await interaction.response.send_modal(PageChangeModal(self))
 
     def button_current_label(self, _button: ui.Button[typing.Self]) -> str:
         """Current page label (changes on page updates)"""
-        return str(self.display_page + 1)
+        return f"{self.display_page + 1} / {self.page_count}"
 
+    #  @ui.button(emoji="<:icons_rightarrow:859388126653186058>", style=discord.ButtonStyle.secondary)
     async def button_next_callback(self, interaction: discord.Interaction):  # pylint: disable=unused-argument
         """Button to send interface to next page"""
 
         self._display_page += 1
+        self.update_view()
         await interaction.response.edit_message(**self.send_kwargs)
 
     def button_next_label(self, _button: ui.Button[typing.Self]) -> str:
         """Right arrow label for going to the next page (constant)"""
         return str(self.emojis.forward)
 
-    async def button_last_callback(self, interaction: discord.Interaction):  # pylint: disable=unused-argument
-        """Button to send interface to last page"""
-
-        self._display_page = self.page_count - 1
-        await interaction.response.edit_message(**self.send_kwargs)
-
-    def button_last_label(self, _button: ui.Button[typing.Self]) -> str:
-        """Endstop label for going to the last page (changes on page count)"""
-        return f"{self.emojis.end} \u200b {self.page_count}"
-
-    class PageChangeModal(ui.Modal, title="Go to page"):
-        """Modal that prompts users for the page number to change to"""
-
-        page_number: ui.TextInput[ui.Modal] = ui.TextInput(label="Page number", style=discord.TextStyle.short)
-
-        def __init__(self, interface: 'PaginatorInterface', *args: typing.Any, **kwargs: typing.Any):
-            super().__init__(*args, timeout=interface.timeout_length, **kwargs)
-            self.interface = interface
-            self.page_number.label = f"Page number (1-{interface.page_count})"
-            self.page_number.min_length = 1
-            self.page_number.max_length = len(str(interface.page_count))
-
-        async def on_submit(self, interaction: discord.Interaction, /):
-            try:
-                if not self.page_number.value:
-                    raise ValueError("Page number not filled")
-
-                self.interface.display_page = int(self.page_number.value) - 1
-            except ValueError:
-                await interaction.response.send_message(
-                    content=f"``{self.page_number.value}`` could not be converted to a page number",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.edit_message(**self.interface.send_kwargs)
-
-    async def button_goto_callback(self, interaction: discord.Interaction):  # pylint: disable=unused-argument
-        """Button to jump directly to a page"""
-
-        await interaction.response.send_modal(self.PageChangeModal(self))
-
-    def button_goto_label(self, _button: ui.Button[typing.Self]) -> str:
-        """Label for selecting a page (constant)"""
-        return "\N{RIGHTWARDS ARROW WITH HOOK} \u200b Go to page"
-
+    #  @ui.button(emoji="✖", style=discord.ButtonStyle.danger)
     async def button_close_callback(self, interaction: discord.Interaction):  # pylint: disable=unused-argument
         """Button to close the interface"""
 
-        message = self.message
-        self.message = None
         if self.task:
             self.task.cancel()
         self.stop()
-        if message:
-            await message.delete()
+        try:
+            await interaction.message.delete()
+        except (discord.NotFound, discord.HTTPException):
+            await self.message.delete()
+        except Exception:
+            pass
 
     def button_close_label(self, _button: ui.Button[typing.Self]) -> str:
         """Label for closing the paginator (constant)"""
-        return f"{self.emojis.close} \u200b Close paginator"
+        return "Close"
+
+    def update_view(self):
+        """
+        Updates view buttons to correspond to current interface state.
+        This is used internally.
+        """
+
+        self.button_previous.label = str(self.emojis.back)
+        self.button_current.label = f"{self.display_page + 1} / {self.page_count}"
+        self.button_next.label = str(self.emojis.forward)
+        self.button_close.emoji = self.emojis.close
+
+        self.button_previous.disabled = False
+        self.button_next.disabled = False
+        self.button_current.disabled = False
+        if (self.display_page + 1) >= self.page_count:
+            self.button_next.disabled = True
+        if self.display_page == 0:
+            self.button_previous.disabled = True
+        if self.page_count < 3:
+            self.button_current.disabled = True
 
 
 class PaginatorEmbedInterface(PaginatorInterface):
@@ -657,8 +625,42 @@ class PaginatorEmbedInterface(PaginatorInterface):
         self._embed.description = self.pages[self.display_page]
         return {'embed': self._embed, 'view': self}
 
-    max_page_size = 2048
+    max_page_size = 4084
 
     @property
     def page_size(self) -> int:
         return self.paginator.max_size
+
+
+class PageChangeModal(ui.Modal, title="Go to page"):
+    """Modal that prompts users for the page number to change to"""
+
+    page_number: ui.TextInput[ui.Modal] = ui.TextInput(label="Page number", style=discord.TextStyle.short)
+
+    def __init__(self, interface: 'PaginatorInterface', *args: typing.Any, **kwargs: typing.Any):
+        super().__init__(*args, timeout=interface.timeout_length, **kwargs)
+        self.interface = interface
+        self.page_number.label = "Which page?"
+        self.page_number.placeholder = f"choose from page 1 to {interface.page_count}"
+        self.page_number.min_length = 1
+        self.page_number.max_length = len(str(interface.page_count))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            if not self.page_number.value:
+                raise ValueError("Page number not filled")
+
+            self.interface.display_page = int(self.page_number.value) - 1
+        except ValueError:
+            await interaction.response.send_message(
+                content=f"`{self.page_number.value}` could not be converted to a page number",
+                ephemeral=True
+            )
+        else:
+            self.interface.update_view()
+            await interaction.response.edit_message(**self.interface.send_kwargs)
+
+
+MAX_MESSAGE_SIZE = 1984 if Flags.NO_EMBEDS else 4084
+Interface = PaginatorInterface if Flags.NO_EMBEDS else PaginatorEmbedInterface
+

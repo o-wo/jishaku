@@ -18,14 +18,14 @@ import typing
 from types import TracebackType
 
 import discord
-from discord.ext import commands
+from redbot.core import commands
 from typing_extensions import ParamSpec
 
 from jishaku.flags import Flags
 
 
 async def send_traceback(
-    destination: typing.Union[discord.abc.Messageable, discord.Message],
+    destination: discord.abc.Messageable,
     verbosity: int,
     etype: typing.Type[BaseException],
     value: BaseException,
@@ -42,18 +42,18 @@ async def send_traceback(
     """
 
     traceback_content = "".join(traceback.format_exception(etype, value, trace, verbosity)).replace("``", "`\u200b`")
+    if len(traceback_content) > 2000:
+        from redbot.core.utils.chat_formatting import text_to_file
+        return await destination.send(file=text_to_file(traceback_content, "traceback.txt"))
 
-    paginator = commands.Paginator(prefix='```py')
+    paginator = commands.Paginator(prefix='```py', max_size=1984)
     for line in traceback_content.split('\n'):
         paginator.add_line(line)
 
     message = None
 
     for page in paginator.pages:
-        if isinstance(destination, discord.Message):
-            message = await destination.reply(page)
-        else:
-            message = await destination.send(page)
+        message = await destination.send(page, mention_author=False)
 
     return message
 
@@ -132,7 +132,7 @@ class ReplResponseReactor:  # pylint: disable=too-few-public-methods
 
         if isinstance(exc_val, (SyntaxError, asyncio.TimeoutError, subprocess.TimeoutExpired)):
             # short traceback, send to channel
-            destination = Flags.traceback_destination(self.message) or self.message.channel
+            destination = Flags.traceback_destination(self.message)
 
             if destination != self.message.channel:
                 await attempt_add_reaction(
@@ -143,7 +143,7 @@ class ReplResponseReactor:  # pylint: disable=too-few-public-methods
                 )
 
             await send_traceback(
-                self.message if destination == self.message.channel else destination,
+                destination,
                 0, exc_type, exc_val, exc_tb
             )
         else:
@@ -155,7 +155,7 @@ class ReplResponseReactor:  # pylint: disable=too-few-public-methods
 
             # this traceback likely needs more info, so increase verbosity, and DM it instead.
             await send_traceback(
-                self.message if destination == self.message.channel else destination,
+                destination,
                 8, exc_type, exc_val, exc_tb
             )
 

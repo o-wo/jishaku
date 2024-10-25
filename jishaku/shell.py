@@ -12,8 +12,10 @@ Tools related to interacting directly with the shell.
 """
 
 import asyncio
+import getpass
 import os
 import pathlib
+import platform
 import re
 import subprocess
 import sys
@@ -66,11 +68,11 @@ class ShellReader:
             # Check for powershell
             if pathlib.Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe").exists():
                 sequence = ['powershell', code]
-                self.ps1 = "PS >"
+                self.ps1 = f"PS > {str(pathlib.Path().resolve())}>"
                 self.highlight = "powershell"
             else:
                 sequence = ['cmd', '/c', code]
-                self.ps1 = "cmd >"
+                self.ps1 = f"cmd > {str(pathlib.Path().resolve())}>"
                 self.highlight = "cmd"
             # Windows doesn't use ANSI codes
             self.escape_ansi = True
@@ -86,7 +88,7 @@ class ShellReader:
             import pty  # pylint: disable=import-outside-toplevel
 
             sequence = [SHELL, '-c', code]
-            self.ps1 = "$"
+            self.ps1 = f"$ {str(pathlib.Path().resolve())} > [{getpass.getuser()}@{platform.node()}]: "
             self.highlight = "ansi"
             self.escape_ansi = escape_ansi
 
@@ -103,7 +105,7 @@ class ShellReader:
         self.loop = loop or asyncio.get_event_loop()
         self.timeout = timeout
 
-        self.stdout_task = self.make_reader_task(self.stdout, self.stdout_handler) if self.process.stdout else None
+        self.stdout_task = self.make_reader_task(self.stdout, self.stdout_handler) if self.stdout else None
         self.stderr_task = self.make_reader_task(self.process.stderr, self.stderr_handler) if self.process.stderr else None
 
         self.queue: 'asyncio.Queue[str]' = asyncio.Queue(maxsize=250)

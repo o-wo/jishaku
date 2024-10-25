@@ -17,8 +17,9 @@ import contextlib
 import typing
 from datetime import datetime, timezone
 
-from discord.ext import commands
+from discord.ext import commands as dpy_commands
 from typing_extensions import Concatenate, ParamSpec
+from redbot.core import commands
 
 from jishaku.types import BotT, ContextA
 
@@ -28,8 +29,8 @@ __all__ = (
 )
 
 
-_ConvertedCommand = commands.Command['Feature', typing.Any, typing.Any]
-_ConvertedGroup = commands.Group['Feature', typing.Any, typing.Any]
+_ConvertedCommand = dpy_commands.Command['Feature', typing.Any, typing.Any]
+_ConvertedGroup = dpy_commands.Group['Feature', typing.Any, typing.Any]
 
 
 _FeatureCommandToCommand = typing.Callable[
@@ -111,9 +112,9 @@ class Feature(commands.Cog):
             self,
             association_map: typing.Dict[
                 'Feature.Command[GenericFeature, typing.Any, typing.Any]',
-                'commands.Command[GenericFeature, typing.Any, typing.Any]',
+                'dpy_commands.Command[GenericFeature, typing.Any, typing.Any]',
             ]
-        ) -> 'commands.Command[GenericFeature, P, T]':
+        ) -> 'dpy_commands.Command[GenericFeature, P, T]':
             """
             Attempts to convert this Feature.Command into either a commands.Command or commands.Group
             """

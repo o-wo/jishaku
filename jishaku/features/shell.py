@@ -21,13 +21,13 @@ import typing
 
 import discord
 from discord import ui
-from discord.ext import commands
+from redbot.core import commands
 
 from jishaku.codeblocks import Codeblock, codeblock_converter
 from jishaku.exception_handling import ReplResponseReactor
 from jishaku.features.baseclass import Feature
 from jishaku.flags import Flags
-from jishaku.paginators import PaginatorInterface, WrappedPaginator
+from jishaku.paginators import MAX_MESSAGE_SIZE, Interface, WrappedPaginator
 from jishaku.shell import ShellReader
 from jishaku.types import ContextA
 
@@ -101,7 +101,7 @@ class ShellFeature(Feature):
                     ephemeral=True
                 )
 
-    @Feature.Command(parent="jsk", name="shell", aliases=["bash", "sh", "powershell", "ps1", "ps", "cmd", "terminal"])
+    @Feature.Command(parent="jsk", name="shell", aliases=["bash", "sh", "terminal"])
     async def jsk_shell(self, ctx: ContextA, *, argument: codeblock_converter):  # type: ignore
         """
         Executes statements in the system shell.
@@ -118,16 +118,16 @@ class ShellFeature(Feature):
                 with ShellReader(argument.content, escape_ansi=not Flags.use_ansi(ctx)) as reader:
                     prefix = "```" + reader.highlight
 
-                    paginator = WrappedPaginator(prefix=prefix, max_size=1975)
+                    paginator = WrappedPaginator(prefix=prefix, max_size=MAX_MESSAGE_SIZE)
                     paginator.add_line(f"{reader.ps1} {argument.content}\n")
 
                     async def send_standard_input(interaction: discord.Interaction):
                         await interaction.response.send_modal(self.ShellStandardInputModal(reader))
 
-                    stdin_button = ui.Button(label="\N{KEYBOARD} Send standard input")
+                    stdin_button = ui.Button(label="\N{KEYBOARD} Send input")
                     stdin_button.callback = send_standard_input
 
-                    interface = PaginatorInterface(ctx.bot, paginator, owner=ctx.author, additional_buttons=[stdin_button])
+                    interface = Interface(ctx.bot, paginator, owner=ctx.author, additional_buttons=[stdin_button])
                     self.bot.loop.create_task(interface.send_to(ctx))
 
                     async for line in reader:
@@ -144,7 +144,7 @@ class ShellFeature(Feature):
         """
 
         if typing.TYPE_CHECKING:
-            argument: Codeblock = argument  # type: ignore
+            argument: Codeblock = argument
 
         return await ctx.invoke(self.jsk_shell, argument=Codeblock(argument.language, "git " + argument.content))  # type: ignore
 

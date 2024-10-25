@@ -28,12 +28,12 @@ from jishaku.flags import Flags
 from jishaku.formatting import MultilineFormatter
 from jishaku.functools import AsyncSender
 from jishaku.math import format_bargraph, format_stddev
-from jishaku.paginators import PaginatorInterface, WrappedPaginator, use_file_check
+from jishaku.paginators import MAX_MESSAGE_SIZE, Interface, WrappedPaginator, use_file_check
 from jishaku.repl import AsyncCodeExecutor, Scope, all_inspections, create_tree, disassemble, get_adaptive_spans, get_var_dict_from_ctx
 from jishaku.types import ContextA
 
 try:
-    import line_profiler  # type: ignore
+    import line_profiler
 except ImportError:
     line_profiler = None
 
@@ -63,7 +63,7 @@ class PythonFeature(Feature):
         return Scope()
 
     @Feature.Command(parent="jsk", name="retain")
-    async def jsk_retain(self, ctx: ContextA, *, toggle: bool = None):  # type: ignore
+    async def jsk_retain(self, ctx: ContextA, *, toggle: typing.Optional[bool] = None):
         """
         Turn variable retention for REPL on or off.
 
@@ -97,8 +97,8 @@ class PythonFeature(Feature):
         What you return is what gets stored in the temporary _ variable.
         """
 
-        if isinstance(result, discord.Message):
-            return await ctx.send(f"<Message <{result.jump_url}>>")
+        if isinstance(result, discord.Message) and result.channel.id != ctx.channel.id:
+            return await ctx.send(view=LinkButton(url=result.jump_url, label="Jump to Message!"))
 
         if isinstance(result, discord.File):
             return await ctx.send(file=result)
@@ -106,7 +106,8 @@ class PythonFeature(Feature):
         if isinstance(result, discord.Embed):
             return await ctx.send(embed=result)
 
-        if isinstance(result, PaginatorInterface):
+        from ..paginators import PaginatorEmbedInterface, PaginatorInterface
+        if isinstance(result, (Interface, PaginatorInterface, PaginatorEmbedInterface)):
             return await result.send_to(ctx)
 
         if not isinstance(result, str):
@@ -114,15 +115,20 @@ class PythonFeature(Feature):
             result = repr(result)
 
         # Eventually the below handling should probably be put somewhere else
-        if len(result) <= 2000:
+        if len(result) <= MAX_MESSAGE_SIZE:
             if result.strip() == '':
                 result = "\u200b"
 
             if self.bot.http.token:
                 result = result.replace(self.bot.http.token, "[token omitted]")
 
+            if Flags.NO_EMBEDS:
+                return await ctx.send(
+                    f"```py\n{result}\n```",
+                    allowed_mentions=discord.AllowedMentions.none()
+                )
             return await ctx.send(
-                result,
+                embed=discord.Embed(title="Result", description=f"```py\n{result}\n```"),
                 allowed_mentions=discord.AllowedMentions.none()
             )
 
@@ -130,7 +136,7 @@ class PythonFeature(Feature):
             # Discord's desktop and web client now supports an interactive file content
             #  display for files encoded in UTF-8.
             # Since this avoids escape issues and is more intuitive than pagination for
-            #  long results, it will now be prioritized over PaginatorInterface if the
+            #  long results, it will now be prioritized over Interface if the
             #  resultant content is below the filesize threshold
             return await ctx.send(file=discord.File(
                 filename="output.py",
@@ -139,11 +145,11 @@ class PythonFeature(Feature):
 
         # inconsistency here, results get wrapped in codeblocks when they are too large
         #  but don't if they're not. probably not that bad, but noting for later review
-        paginator = WrappedPaginator(prefix='```py', suffix='```', max_size=1980)
+        paginator = WrappedPaginator(prefix='```py', suffix='```', max_size=MAX_MESSAGE_SIZE)
 
         paginator.add_line(result)
 
-        interface = PaginatorInterface(ctx.bot, paginator, owner=ctx.author)
+        interface = Interface(ctx.bot, paginator, owner=ctx.author)
         return await interface.send_to(ctx)
 
     def jsk_python_get_convertables(self, ctx: ContextA) -> typing.Tuple[typing.Dict[str, typing.Any], typing.Dict[str, str]]:
@@ -173,14 +179,14 @@ class PythonFeature(Feature):
 
         return arg_dict, convertables
 
-    @Feature.Command(parent="jsk", name="py", aliases=["python"])
+    @Feature.Command(parent="jsk", name="py", aliases=["python", "eval", "ev"])
     async def jsk_python(self, ctx: ContextA, *, argument: codeblock_converter):  # type: ignore
         """
         Direct evaluation of Python code.
         """
 
         if typing.TYPE_CHECKING:
-            argument: Codeblock = argument  # type: ignore
+            argument: Codeblock = argument
 
         arg_dict, convertables = self.jsk_python_get_convertables(ctx)
         scope = self.scope
@@ -210,7 +216,7 @@ class PythonFeature(Feature):
         """
 
         if typing.TYPE_CHECKING:
-            argument: Codeblock = argument  # type: ignore
+            argument: Codeblock = argument
 
         arg_dict, convertables = self.jsk_python_get_convertables(ctx)
         scope = self.scope
@@ -251,11 +257,11 @@ class PythonFeature(Feature):
                                 fp=io.BytesIO(text.encode('utf-8'))
                             )))
                         else:
-                            paginator = WrappedPaginator(prefix="```prolog", max_size=1980)
+                            paginator = WrappedPaginator(prefix="```prolog", max_size=MAX_MESSAGE_SIZE)
 
                             paginator.add_line(text)
 
-                            interface = PaginatorInterface(ctx.bot, paginator, owner=ctx.author)
+                            interface = Interface(ctx.bot, paginator, owner=ctx.author)
                             send(await interface.send_to(ctx))
         finally:
             scope.clear_intersection(arg_dict)
@@ -268,7 +274,7 @@ class PythonFeature(Feature):
             """
 
             if typing.TYPE_CHECKING:
-                argument: Codeblock = argument  # type: ignore
+                argument: Codeblock = argument
 
             arg_dict, convertables = self.jsk_python_get_convertables(ctx)
             scope = self.scope
@@ -291,9 +297,9 @@ class PythonFeature(Feature):
 
                         while count < 10_000 and (time.perf_counter() - overall_start) < 30.0:
                             profile = line_profiler.LineProfiler()  # type: ignore
-                            profile.add_function(executor.function)  # type: ignore
+                            profile.add_function(executor.function)
 
-                            profile.enable()  # type: ignore
+                            profile.enable()
                             try:
                                 start = time.perf_counter()
                                 async for send, result in AsyncSender(executor):  # type: ignore
@@ -311,7 +317,7 @@ class PythonFeature(Feature):
 
                                 end = time.perf_counter()
                             finally:
-                                profile.disable()  # type: ignore
+                                profile.disable()
 
                             # Reduces likelihood of hardblocking
                             await asyncio.sleep(0.001)
@@ -321,10 +327,10 @@ class PythonFeature(Feature):
 
                             ioless_time: float = 0
 
-                            for function in profile.code_map.values():  # type: ignore
-                                for timing in function.values():  # type: ignore
-                                    line_timings[timing['lineno']].append(timing['total_time'] * profile.timer_unit)  # type: ignore
-                                    ioless_time += timing['total_time'] * profile.timer_unit  # type: ignore
+                            for function in profile.code_map.values():
+                                for timing in function.values():
+                                    line_timings[timing['lineno']].append(timing['total_time'] * profile.timer_unit)
+                                    ioless_time += timing['total_time'] * profile.timer_unit
 
                             ioless_timings.append(ioless_time)
 
@@ -370,7 +376,7 @@ class PythonFeature(Feature):
         """
 
         if typing.TYPE_CHECKING:
-            argument: Codeblock = argument  # type: ignore
+            argument: Codeblock = argument
 
         arg_dict = get_var_dict_from_ctx(ctx, Flags.SCOPE_PREFIX)
 
@@ -383,11 +389,11 @@ class PythonFeature(Feature):
                     fp=io.BytesIO(text.encode('utf-8'))
                 ))
             else:
-                paginator = WrappedPaginator(prefix='```py', max_size=1980)
+                paginator = WrappedPaginator(prefix='```py', max_size=MAX_MESSAGE_SIZE)
 
                 paginator.add_line(text)
 
-                interface = PaginatorInterface(ctx.bot, paginator, owner=ctx.author)
+                interface = Interface(ctx.bot, paginator, owner=ctx.author)
                 await interface.send_to(ctx)
 
     @Feature.Command(parent="jsk", name="ast")
@@ -397,7 +403,7 @@ class PythonFeature(Feature):
         """
 
         if typing.TYPE_CHECKING:
-            argument: Codeblock = argument  # type: ignore
+            argument: Codeblock = argument
 
         async with ReplResponseReactor(ctx.message):
             text = create_tree(argument.content, use_ansi=Flags.use_ansi(ctx))
@@ -415,7 +421,7 @@ class PythonFeature(Feature):
             """
 
             if typing.TYPE_CHECKING:
-                argument: Codeblock = argument  # type: ignore
+                argument: Codeblock = argument
 
             arg_dict, convertables = self.jsk_python_get_convertables(ctx)
             scope = self.scope
@@ -460,3 +466,13 @@ class PythonFeature(Feature):
 
             finally:
                 scope.clear_intersection(arg_dict)
+
+
+class LinkButton(discord.ui.View):
+    def __init__(self, url: str, label: str, emoji: typing.Optional[str] = None):
+        super().__init__()
+        # Link buttons cannot be made with the decorator
+        # Therefore we have to manually create one.
+        # We add the quoted url to the button, and add the button to the view.
+        self.add_item(discord.ui.Button(label=label, url=url, emoji=emoji))
+
